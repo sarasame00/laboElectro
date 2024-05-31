@@ -62,13 +62,23 @@ def importData(fileName, sheetName, numCol, delHead = False):
 
 #!!!!!!!!!!!!!!! CURVE FIT !!!!!!!!!!!!!!!!!!!
 def curveFit(func, x, y, graf=False):
-  popt, pcov = curve_fit(func, x, y)
+
+  if isinstance(x, list): 
+    X = np.array(x)
+  else:
+    X = x
+  if isinstance(y, list): 
+    Y = np.array(y)
+  else :
+    Y = y
+
+  popt, pcov = curve_fit(func, X, Y)
 
   perr = np.sqrt(np.diag(pcov))# Incertesa standard dels parametres
 
-  residuals = y- func(x, *popt)
+  residuals = Y- func(X, *popt)
   ss_res = np.sum(residuals**2)
-  ss_tot = np.sum((y-np.mean(y))**2)
+  ss_tot = np.sum((Y-np.mean(Y))**2)
   r_squared = 1 - (ss_res / ss_tot) #R^2
 
   if graf:
@@ -80,140 +90,162 @@ def curveFit(func, x, y, graf=False):
 
     print(f'R^2 = {r_squared}')
     
-# !!!!!!!!!!!!! GRAFICA !!!!!!!!!!!!!!!
-def grafica(x,y,errx,erry,xlabel,ylabel, titol='títol', xlimits=False, ylimits=False, func=False, rang=False, label=['curve fit'], 
-            plot=False, plot1=False, plot2=False, plot3=False, plot4=False, 
-            plot5=False, plot6=False, posLegend='upper right'):
-  fig = plt.figure()
-  ax1= fig.add_subplot()
-  plt.title(titol)
-  colors= ['c','m','y','b','r','g','k']
-  if isinstance(y[0], list):
-      for li in y:
-          ax1.errorbar(x,
-                       li,
-                       xerr= errx,
-                       yerr=erry[y.index(li)],
-                       capsize=3,
-                       elinewidth=0.5,
-                       linewidth=0,
-                       marker='o',
-                       markersize=3,
-                       markerfacecolor='0.5',
-                       markeredgecolor=colors[y.index(li)],
-                       ecolor=colors[y.index(li)],
-                       label=ylabel[y.index(li)+1])
-          ax1.set_ylabel(ylabel[0])
-          ax1.legend(loc='upper right')
-  else:
-    ax1.errorbar(x,
-                 y,
-                 xerr= errx,
-                 yerr=erry,
-                 capsize=3,
-                 elinewidth=0.5,
-                 linewidth=0,
-                 marker='o',
-                 markersize=3,
-                 markerfacecolor='0.5',
-                 markeredgecolor='k',
-                 ecolor='k',
-                 label='mesures')
-    if xlimits !=False:
-      ax1.set_xlim(xlimits[0],xlimits[1])
-    if ylimits !=False:
-      ax1.set_ylim(ylimits[0],ylimits[1])
-    ax1.set_xlabel(xlabel)
-    ax1.set_ylabel(ylabel)  
-  if plot !=False:
-      ax1.plot(plot[0],plot[1],label=plot[2], color=colors[0])
-  if plot1 !=False:
-      ax1.plot(plot1[0],plot1[1],label=plot1[2], color=colors[0])
-  if plot2 !=False:
-      ax1.plot(plot2[0],plot2[1],label=plot2[2], color=colors[1])
-  if plot3 !=False:
-      ax1.plot(plot3[0],plot3[1],label=plot3[2], color=colors[1])
-  if plot4 !=False:
-      ax1.plot(plot4[0],plot4[1],label=plot4[2],color=colors[2])
-  if plot5 !=False:
-      ax1.plot(plot5[0],plot5[1],label=plot5[2],color=colors[2])
-  if plot6 !=False:
-       ax1.plot(plot6[0],plot6[1],label=plot6[2],color=colors[6])
-  if func!=False:
-      if rang!=False:
-          u= np.arange(rang[0],rang[1],0.001)
-      else:
-        u= np.arange(min(x)-2,max(x)+2,0.001)
-      plt.plot(u, func(u),label=label)
-      
-  ax1.legend(loc=posLegend)
+#!!!!!!!!!!!!!!!!! REGRESSIO LINIAL !!!!!!!!!!!!!!!!!!!!!
+def regressio(x,y, graf=False, table = False):
 
-  #posem nom als eixos
-  ax1.set_xlabel(xlabel)
-
+  def func(x, A, B):
+    return A*x +B
   
+  curve = curveFit(func, x, y, graf= True)
+  A = Variable('A', curve[0][0], curve[1][0])
+  B = Variable('B', curve[0][1], curve[1][1])
+  R2 = curve[2]
+
+  if graf:
+    return A, B, R2
+  elif table:
+    print('\\begin{tabular}{ccc}')
+    print('$A$  & $B$ & $r^2$ \\ \\ \hline')
+    print(f'${A.val} \pm {A.inc}$ & ${B.val} \pm {B.inc}$ & {R2}\\ \\ \hline')
+    print('\end{tabular}')
+  else:
+    print(f'A = {A.val} \pm {A.inc}')
+    print(f'B = {B.val} \pm {B.inc}')
+    print(f'$R^2$ = {R2}')
+
+    
+  
+
   #!!!!!!!!!!!!! PROPAGACIÓ D'INCERTESES !!!!!!!!!!!!!!!!!!!!!!!
 class Variable:
-  def __init__(self,simbol, valor, incertesa):
+  def __init__(self, simbol, valor, incertesa):
      self.sim = sym.Symbol(simbol)
      self.val = valor
      self.inc = incertesa
         
-def propIncertesa(fun, variables, val=False):
-  tot=[]
-  errfun=0
-  
-  #Càlcul simbòlic de la incertesa
-  for s in range(len(variables)):
-    sigma_s=sym.Symbol('sigma_'+variables[s].sim.name)
-    errfun += (sym.diff(fun,variables[s].sim)*sigma_s)**2
+def propIncertesa(fun, variables, val=True):
 
-  errfun=errfun**sym.Rational(1/2)
+  incerteses = []
+  valors = []
+  errfun = 0
+
+  # calcul simbolic de la incertesa
+  for s in range(len(variables)):
+
+    sigma_s = sym.Symbol('sigma_' + variables[s].sim.name)
+    errfun += (sym.diff(fun, variables[s].sim)*sigma_s)**2
+
+  errfun = errfun**sym.Rational(1/2)
   errfunev = errfun
-  
-  #Variables i/o incerteses amb un sol valor
-  for s in range(len(variables)):
-    if isinstance(variables[s].val, (float,int,sym.core.numbers.Float)): 
-        errfunev = errfunev.subs(variables[s].sim,variables[s].val)
-    if isinstance(variables[s].inc, (float,int,sym.core.numbers.Float)):
-        errfunev = errfunev.subs(sym.Symbol('sigma_'+variables[s].sim.name),variables[s].inc)
 
-  #Llistes de variables i/o incerteses
+  valor = fun
+  
+  # variables i/o incerteses amb un sol valor
   for s in range(len(variables)):
-    #Si el valor de la Variable és una llista...
-    if isinstance(variables[s].val, list):
-        if len(tot) ==0:
+
+    # si la variable es un sol valor es substitueix el simbol pel valor
+    if isinstance(variables[s].val, (float, int, sym.core.numbers.Float)): 
+        errfunev = errfunev.subs(variables[s].sim, variables[s].val)
+        valor = valor.subs(variables[s].sim, variables[s].val)
+
+    # si la incertesa es un sol valor es substitueix el simbol pel valor
+    if isinstance(variables[s].inc, (float, int, sym.core.numbers.Float)):
+        errfunev = errfunev.subs(sym.Symbol('sigma_' + variables[s].sim.name), variables[s].inc)
+
+  # llistes de variables i/o incerteses
+  for s in range(len(variables)):
+
+    # si el valor de la Variable és una llista...
+    if isinstance(variables[s].val, (list, np.ndarray)):
+        
+        # si es la primera variable que es una llista
+        if len(incerteses) == 0:
+            
+            # per cada valor de la llista
             for i in variables[s].val:
+                
                 xmod = errfunev
-                tot.append(xmod.subs(variables[s].sim,i))
-        elif len(tot) !=0:
-            for i in range(len(tot)):
-                tot[i] = tot[i].subs(variables[s].sim,variables[s].val[i])
-    #Si la incertesa de la Variable és una llista...
-    if isinstance(variables[s].inc, list):
-        if len(tot) ==0:
-            for i in variables[s].inc:
-                tot.append(errfunev.subs(sym.Symbol('sigma_'+variables[s].sim.name),i))
-        elif len(tot) !=0:
-            for i in range(len(tot)):
-                tot[i] = tot[i].subs(sym.Symbol('sigma_'+variables[s].sim.name),variables[s].inc[i])
+                xomd1 = valor
+                # afegim a la llista tot el lexpressio de la incertesa intercambiant la variable pel seu valor
+                incerteses.append(xmod.subs(variables[s].sim, i))
+                valors.append(valor.subs(variables[s].sim, i))
 
-  if len(tot) ==0:
-    errfunev=errfunev.evalf()
-    if val==True:
-      return errfunev
+        # si no es la primera variable que es una llista i.e. ja hi ha expresio de la incertesa per cada valor
+        elif len(incerteses) !=0:
+            
+            for i in range(len(incerteses)):
+                
+                incerteses[i] = incerteses[i].subs(variables[s].sim, variables[s].val[i])
+                valors[i] = valors[i].subs(variables[s].sim, variables[s].val[i])
+
+
+    #Si la incertesa de la Variable és una llista...
+    if isinstance(variables[s].inc, (list, np.ndarray)):
+        
+        if len(incerteses) == 0:
+            
+            for i in variables[s].inc:
+                
+                incerteses.append(errfunev.subs(sym.Symbol('sigma_'+variables[s].sim.name), i))
+
+        elif len(incerteses) !=0:
+            
+            for i in range(len(incerteses)):
+                
+                incerteses[i] = incerteses[i].subs(sym.Symbol('sigma_'+variables[s].sim.name),variables[s].inc[i])
+
+  if len(incerteses) == 0:
+    errfunev = errfunev.evalf()
+    if val == True:
+      return valor, errfunev
     else:
-      return errfun,errfunev
-  elif len(tot) !=0:
-    for i in tot:
+      return errfun, errfunev
+  elif len(incerteses) != 0:
+    for i in incerteses:
       i = i.evalf()
-    if val==True:
-      return tot
+    if val == True:
+      return valors, incerteses
     else:
-      return errfun,tot
+      return errfun, incerteses
   
-#!!!!!!!!!!!!! INCERTESA MITJANA !!!!!!!!!!!!!!!!!
-    
+
+#!!!!!!!!!!!!! GRAFICAR DADES !!!!!!!!!!!!!!!!!
+
+def plotDades(ax, x, y, label = False, color = 'b', marker = 'o', markersize = 3):
+
+  ax.tick_params(direction = 'in', right = True, top = True)
+  ax.grid(color = '#eeeeee', linestyle = '--')
+  
+  if label:
+    ax.errorbar(x.val, 
+                y.val, 
+                xerr = x.inc,
+                yerr = y.inc,
+                capsize = 0,
+                elinewidth = 0.5,
+                linewidth = 0,
+                marker = marker,
+                markersize = markersize,
+                markerfacecolor = color,
+                markeredgecolor = color,
+                ecolor = color,
+                label = label
+                )
+  else:
+    ax.errorbar(x.val, 
+                y.val, 
+                xerr = x.inc,
+                yerr = y.inc,
+                capsize = 0,
+                elinewidth = 0.5,
+                linewidth = 0,
+                marker = marker,
+                markersize = markersize,
+                markerfacecolor = color,
+                markeredgecolor = color,
+                ecolor = color
+                )
+
   
     
   
